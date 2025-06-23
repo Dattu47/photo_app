@@ -18,3 +18,10 @@ button {
   font-weight: bold;
   text-shadow: 2px 2px #000;
 }
+#countdownText {
+  font-weight: bold;
+  font-size: 48px;
+  text-align: center;
+  text-shadow: 2px 2px #000;
+  color: red;
+}

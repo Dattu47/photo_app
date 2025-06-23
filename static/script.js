@@ -8,14 +8,27 @@ canvas.height = 480;
 
 let isCountingDown = false;
 
-// Start webcam
-navigator.mediaDevices.getUserMedia({ video: true })
-  .then(stream => {
-    video.srcObject = stream;
-  });
+// ✅ Try to use rear camera on mobile
+navigator.mediaDevices.getUserMedia({
+  video: { facingMode: { exact: "environment" } },
+  audio: false
+})
+.then(stream => {
+  video.srcObject = stream;
+})
+.catch(err => {
+  console.warn("Rear camera not available, using default camera.", err);
+  // Fallback to front camera
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(fallbackStream => {
+      video.srcObject = fallbackStream;
+    });
+});
 
-// Hand detection with Mediapipe
-const hands = new Hands({locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+// ✅ Setup Mediapipe Hands
+const hands = new Hands({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
 hands.setOptions({
   maxNumHands: 2,
   modelComplexity: 1,
@@ -24,12 +37,13 @@ hands.setOptions({
 });
 
 const camera = new Camera(video, {
-  onFrame: async () => await hands.send({image: video}),
+  onFrame: async () => await hands.send({ image: video }),
   width: 640,
   height: 480
 });
 camera.start();
 
+// ✅ Gesture detection (open palm = 3+ fingers)
 hands.onResults(results => {
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -46,20 +60,23 @@ hands.onResults(results => {
 });
 
 function isOpenPalm(landmarks) {
-  const tipIds = [8, 12, 16, 20]; // index, middle, ring, pinky tips
-  let fingersExtended = 0;
+  const tipIds = [8, 12, 16, 20]; // index to pinky tips
+  let extended = 0;
   for (let i = 0; i < tipIds.length; i++) {
     if (landmarks[tipIds[i]].y < landmarks[tipIds[i] - 2].y) {
-      fingersExtended++;
+      extended++;
     }
   }
-  return fingersExtended >= 3;
+  return extended >= 3;
 }
 
+// ✅ Countdown before capture
 function startCountdownAndCapture() {
   isCountingDown = true;
   let count = 3;
+
   const countdownText = document.createElement('div');
+  countdownText.id = 'countdownText';
   countdownText.style.position = 'absolute';
   countdownText.style.top = '50%';
   countdownText.style.left = '50%';
@@ -67,7 +84,8 @@ function startCountdownAndCapture() {
   countdownText.style.fontSize = '48px';
   countdownText.style.color = 'red';
   countdownText.style.zIndex = '10';
-  countdownText.id = 'countdownText';
+  countdownText.style.fontWeight = 'bold';
+  countdownText.style.textShadow = '2px 2px black';
   document.body.appendChild(countdownText);
 
   const countdown = setInterval(() => {
@@ -82,18 +100,20 @@ function startCountdownAndCapture() {
   }, 1000);
 }
 
+// ✅ Capture image and download
 function captureImage() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const imageData = canvas.toDataURL("image/png");
+  const imgData = canvas.toDataURL("image/png");
   const link = document.createElement('a');
-  link.href = imageData;
+  link.href = imgData;
   link.download = "group_photo.png";
   link.click();
 }
 
+// ✅ Capture button (optional)
 captureBtn.addEventListener('click', startCountdownAndCapture);
 
-// Voice recognition
+// ✅ Voice command: "shoot"
 const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
 recognition.lang = 'en-US';
 recognition.continuous = true;
