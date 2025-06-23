@@ -1,31 +1,59 @@
+// static/script.js
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const captureBtn = document.getElementById('captureBtn');
+const reverseBtn = document.getElementById('reverseBtn');
 
 canvas.width = 640;
 canvas.height = 480;
 
 let isCountingDown = false;
+let currentFacingMode = "environment";
+let streamRef = null;
+let camera; // Mediapipe camera
 
-// ✅ Try to use rear camera on mobile
-navigator.mediaDevices.getUserMedia({
-  video: { facingMode: { exact: "environment" } },
-  audio: false
-})
-.then(stream => {
-  video.srcObject = stream;
-})
-.catch(err => {
-  console.warn("Rear camera not available, using default camera.", err);
-  // Fallback to front camera
-  navigator.mediaDevices.getUserMedia({ video: true })
-    .then(fallbackStream => {
-      video.srcObject = fallbackStream;
+function startCamera(facingMode) {
+  const constraints = {
+    video: { facingMode: { exact: facingMode } },
+    audio: false
+  };
+
+  navigator.mediaDevices.getUserMedia(constraints)
+    .then(stream => {
+      if (streamRef) {
+        streamRef.getTracks().forEach(track => track.stop());
+      }
+      streamRef = stream;
+      video.srcObject = stream;
+      restartMediapipeCamera();
+    })
+    .catch(err => {
+      console.warn("Facing mode error or not supported:", err);
+      fallbackToDefaultCamera();
     });
+}
+
+function fallbackToDefaultCamera() {
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => {
+      if (streamRef) {
+        streamRef.getTracks().forEach(track => track.stop());
+      }
+      streamRef = stream;
+      video.srcObject = stream;
+      restartMediapipeCamera();
+    });
+}
+
+reverseBtn.addEventListener('click', () => {
+  currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+  startCamera(currentFacingMode);
 });
 
-// ✅ Setup Mediapipe Hands
+startCamera(currentFacingMode);
+
+// Mediapipe setup
 const hands = new Hands({
   locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
 });
@@ -36,14 +64,16 @@ hands.setOptions({
   minTrackingConfidence: 0.5
 });
 
-const camera = new Camera(video, {
-  onFrame: async () => await hands.send({ image: video }),
-  width: 640,
-  height: 480
-});
-camera.start();
+function restartMediapipeCamera() {
+  if (camera) camera.stop();
+  camera = new Camera(video, {
+    onFrame: async () => await hands.send({ image: video }),
+    width: 640,
+    height: 480
+  });
+  camera.start();
+}
 
-// ✅ Gesture detection (open palm = 3+ fingers)
 hands.onResults(results => {
   ctx.save();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -53,14 +83,13 @@ hands.onResults(results => {
   if (results.multiHandLandmarks.length > 0 && !isCountingDown) {
     const hand = results.multiHandLandmarks[0];
     if (isOpenPalm(hand)) {
-      console.log("Open palm detected - starting countdown");
       startCountdownAndCapture();
     }
   }
 });
 
 function isOpenPalm(landmarks) {
-  const tipIds = [8, 12, 16, 20]; // index to pinky tips
+  const tipIds = [8, 12, 16, 20];
   let extended = 0;
   for (let i = 0; i < tipIds.length; i++) {
     if (landmarks[tipIds[i]].y < landmarks[tipIds[i] - 2].y) {
@@ -70,7 +99,6 @@ function isOpenPalm(landmarks) {
   return extended >= 3;
 }
 
-// ✅ Countdown before capture
 function startCountdownAndCapture() {
   isCountingDown = true;
   let count = 3;
@@ -100,7 +128,6 @@ function startCountdownAndCapture() {
   }, 1000);
 }
 
-// ✅ Capture image and download
 function captureImage() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const imgData = canvas.toDataURL("image/png");
@@ -110,21 +137,17 @@ function captureImage() {
   link.click();
 }
 
-// ✅ Capture button (optional)
 captureBtn.addEventListener('click', startCountdownAndCapture);
 
-// ✅ Voice command: "shoot"
+// Voice Recognition
 const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
 recognition.lang = 'en-US';
 recognition.continuous = true;
 recognition.interimResults = false;
-
 recognition.onresult = function (event) {
   const transcript = event.results[event.results.length - 1][0].transcript.toLowerCase();
-  console.log("Heard: " + transcript);
   if (transcript.includes("shoot") && !isCountingDown) {
     startCountdownAndCapture();
   }
 };
-
 recognition.start();
